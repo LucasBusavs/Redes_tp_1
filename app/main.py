@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket
 from app.db import engine, Base
 from app.routers import auth, users, rooms, messages
+from fastapi.openapi.utils import get_openapi
 
 app = FastAPI(title="Chat API", version="1.0")
 
@@ -26,3 +27,25 @@ async def websocket_endpoint(websocket: WebSocket, room_id: int):
             await websocket.send_text(f"Você disse: {data}")
     except Exception:
         await websocket.close()
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    openapi_schema.setdefault(
+        "components", {}).setdefault("securitySchemes", {})
+    openapi_schema["components"]["securitySchemes"]["bearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+    }
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi

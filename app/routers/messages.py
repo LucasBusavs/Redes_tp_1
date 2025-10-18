@@ -36,11 +36,27 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
+def _user_in_room(room: models.Room, user_id: int) -> bool:
+    # tenta usar relação room.users (mais comum). Ajuste se seu modelo for outro.
+    try:
+        users = getattr(room, "users", None)
+        if users is None:
+            return False
+        return any(u.id == user_id for u in users)
+    except Exception:
+        return False
+
+
 @router.post("/")
 def send_message(msg: schemas.MessageCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     room = db.query(models.Room).filter(models.Room.id == msg.room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
+
+    if not _user_in_room(room, current_user.id):
+        raise HTTPException(
+            status_code=403, detail="Você não faz parte desta sala")
+
     message = models.Message(
         room_id=room.id,
         user_id=current_user.id,
@@ -78,7 +94,15 @@ def send_direct_message(
 
 
 @router.get("/{room_id}")
-def get_messages(room_id: int, db: Session = Depends(get_db)):
+def get_messages(room_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+
+    if not _user_in_room(room, current_user.id):
+        raise HTTPException(
+            status_code=403, detail="Você não tem acesso a esta sala")
+
     messages = db.query(models.Message).filter(
         models.Message.room_id == room_id).all()
     return messages
