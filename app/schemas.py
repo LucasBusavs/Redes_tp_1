@@ -60,7 +60,7 @@ class MessageBase(BaseModel):
 
 
 class MessageCreate(MessageBase):
-    pass
+    room_id: int
 
 
 class Message(MessageBase):
