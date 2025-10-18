@@ -4,6 +4,8 @@ from app import models, schemas
 from app.db import get_db
 from datetime import datetime
 from app.auth_utils import get_current_user
+import asyncio
+from app.dm_connection_manager import dm_manager
 
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
@@ -33,6 +35,9 @@ def send_direct_message(
     db.add(direct_msg)
     db.commit()
     db.refresh(direct_msg)
+
+    asyncio.create_task(dm_manager.send_direct_message(receiver_id, message=direct_msg))
+
     return {"message": "Mensagem direta enviada com sucesso"}
 
 # MARK: - Get Direct messages

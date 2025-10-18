@@ -1,33 +1,75 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Depends
 from app.db import engine, Base
 from app.routers import auth, users, rooms, messages
 from fastapi.openapi.utils import get_openapi
+from app.db import get_db
+from app.auth_utils import get_current_user
+from app import models
+from sqlalchemy.orm import Session
+from app.connection_manager import manager
+from app.dm_connection_manager import dm_manager
 
 app = FastAPI(title="Chat API", version="1.0")
 
 # Cria as tabelas no banco (somente para protótipo)
 Base.metadata.create_all(bind=engine)
 
-# Rotas REST
-app.include_router(auth.router)
+# MARK: - Rotas REST
+# app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(rooms.router)
 app.include_router(messages.router)
 
-# WebSocket simples de exemplo
+
+# MARK: - Room WS
+
+@app.websocket("/ws/rooms/{room_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        await websocket.close(code=1008)  # Policy Violation
+        return
+
+    user_in_room = db.query(models.UserRoom).filter_by(
+        user_id=current_user.id, room_id=room_id
+    ).first()
+    if not user_in_room:
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(room_id, websocket)
+
+    try:
+        # Mantém a conexão aberta (sem tratar mensagens)
+        while True:
+            await websocket.receive_text()  # só mantém a conexão viva
+    except WebSocketDisconnect:
+        manager.disconnect(room_id, websocket)
 
 
-@app.websocket("/ws/{room_id}")
-async def websocket_endpoint(websocket: WebSocket, room_id: int):
-    await websocket.accept()
-    await websocket.send_text(f"Conectado à sala {room_id}!")
+# MARK: - DM WS
+
+@app.websocket("/ws/dm")
+async def dm_websocket(
+    websocket: WebSocket,
+    current_user: models.User = Depends(get_current_user)
+):
+    # Registra o WebSocket do remetente
+    await dm_manager.connect(current_user.id, websocket)
+
     try:
         while True:
-            data = await websocket.receive_text()
-            await websocket.send_text(f"Você disse: {data}")
-    except Exception:
-        await websocket.close()
+            # Recebe mensagem do remetente
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        dm_manager.disconnect(current_user.id, websocket)
 
+#MARK: - OpenAPI
 
 def custom_openapi():
     if app.openapi_schema:

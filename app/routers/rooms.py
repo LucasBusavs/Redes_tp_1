@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.db import get_db
 from app.auth_utils import get_current_user
+import asyncio
+from app.connection_manager import manager
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
@@ -154,6 +156,10 @@ def send_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+
+    
+    asyncio.create_task(manager.broadcast(room_id, message=message))
+
     return message
 
 # MARK: - Get messages
