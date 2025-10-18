@@ -36,7 +36,7 @@ class UserOut(BaseModel):
 
 class RoomBase(BaseModel):
     name: str
-    description: str
+    # description: str
 
 class RoomCreate(RoomBase):
     pass

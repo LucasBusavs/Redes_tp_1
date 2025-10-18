@@ -1,9 +1,9 @@
-from fastapi import FastAPI, WebSocket, Depends
+from fastapi import FastAPI, WebSocket, Depends, WebSocketDisconnect, status
 from app.db import engine, Base
 from app.routers import auth, users, rooms, messages
 from fastapi.openapi.utils import get_openapi
 from app.db import get_db
-from app.auth_utils import get_current_user
+from app.auth_utils import get_current_user, verify_token
 from app import models
 from sqlalchemy.orm import Session
 from app.connection_manager import manager
@@ -27,9 +27,19 @@ app.include_router(messages.router)
 async def websocket_endpoint(
     websocket: WebSocket,
     room_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
+    token = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    token = token.split(" ")[1]
+    current_user = verify_token(token=token, db=db)
+    if current_user is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     room = db.query(models.Room).filter(models.Room.id == room_id).first()
     if not room:
         await websocket.close(code=1008)  # Policy Violation
@@ -57,8 +67,19 @@ async def websocket_endpoint(
 @app.websocket("/ws/dm")
 async def dm_websocket(
     websocket: WebSocket,
-    current_user: models.User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
+    token = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    token = token.split(" ")[1]
+    current_user = verify_token(token=token, db=db)
+    if current_user is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    
     # Registra o WebSocket do remetente
     await dm_manager.connect(current_user.id, websocket)
 
@@ -90,4 +111,4 @@ def custom_openapi():
     return app.openapi_schema
 
 
-app.openapi = custom_openapi
+app.openapi = custom_openapi()

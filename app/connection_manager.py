@@ -21,8 +21,17 @@ class ConnectionManager:
     async def broadcast(self, room_id: int, message: Message):
         """Envia JSON para todos na sala"""
         if room_id in self.active_connections:
+            message_dict = self.message_to_dict(message=message)
             for connection in self.active_connections[room_id]:
-                await connection.send_json(message)
+                await connection.send_json(message_dict)
 
+    def message_to_dict(self, message: Message):
+        return {
+            "id": message.id,
+            "content": message.content,
+            "user_id": message.user_id,
+            "room_id": message.room_id,
+            "timestamp": message.timestamp.isoformat()  # datetime -> string
+        }
 
 manager = ConnectionManager()

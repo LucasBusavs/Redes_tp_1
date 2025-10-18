@@ -7,8 +7,9 @@ from passlib.hash import bcrypt
 from fastapi.security import OAuth2PasswordRequestForm
 import os
 from datetime import datetime, timedelta
+from jose import jwt
 
-SECRET_KEY = os.getenv("SECRET_KEY", "mysecretkey")
+SECRET_KEY = os.getenv("SECRET_KEY", "supersecret")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

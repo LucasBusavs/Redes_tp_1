@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app import models, schemas
 from app.db import get_db
 from app.auth_utils import get_current_user
 import asyncio
+from datetime import datetime
 from app.connection_manager import manager
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
@@ -15,7 +16,7 @@ def create_room(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    db_room = models.Room(name=room.name, description=room.description, owner_id=current_user.id)
+    db_room = models.Room(name=room.name, owner_id=current_user.id)
     db.add(db_room)
     db.commit()
     db.refresh(db_room)
@@ -88,7 +89,7 @@ def leave_room(
 
     db.delete(relation)
     db.commit()
-    return {"message": f"{current_user.username} saiu da sala"}
+    return {"message": f"{current_user.username} saiu da sala {room.name}"}
 
 # MARK: - Remove user
 @router.delete("/{room_id}/users/{user_id}")
@@ -133,7 +134,7 @@ def _user_in_room(room: models.Room, user_id: int) -> bool:
 
 
 @router.post("/{room_id}/messages")
-def send_message(
+async def send_message(
     room_id: int,
     msg: schemas.MessageCreate, 
     db: Session = Depends(get_db), 
@@ -158,7 +159,7 @@ def send_message(
     db.refresh(message)
 
     
-    asyncio.create_task(manager.broadcast(room_id, message=message))
+    await asyncio.create_task(manager.broadcast(room_id, message=message))
 
     return message
 
@@ -179,6 +180,6 @@ def get_messages(room_id: int, db: Session = Depends(get_db), current_user: mode
     return messages
 
 # MARK: - Get all rooms
-@router.get("/")
-def list_rooms(db: Session = Depends(get_db)):
-    return db.query(models.Room).all()
+@router.get("/", response_model=list[schemas.Room])
+def list_rooms(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    return db.query(models.Room).options(joinedload(models.Room.users)).all()

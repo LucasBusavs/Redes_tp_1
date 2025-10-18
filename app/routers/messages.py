@@ -15,7 +15,7 @@ router = APIRouter(prefix="/messages", tags=["Messages"])
 # MARK: - Send Direct message
 
 @router.post("/direct/{receiver_id}")
-def send_direct_message(
+async def send_direct_message(
     receiver_id: int,
     msg: schemas.MessageCreate,
     db: Session = Depends(get_db),
@@ -36,7 +36,7 @@ def send_direct_message(
     db.commit()
     db.refresh(direct_msg)
 
-    asyncio.create_task(dm_manager.send_direct_message(receiver_id, message=direct_msg))
+    await asyncio.create_task(dm_manager.send_direct_message(receiver_id, message=direct_msg))
 
     return {"message": "Mensagem direta enviada com sucesso"}
 
