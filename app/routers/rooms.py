@@ -34,17 +34,104 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-@router.post("/")
-def create_room(room: schemas.RoomCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    existing = db.query(models.Room).filter(
-        models.Room.name == room.name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Sala já existe")
-    new_room = models.Room(name=room.name)
-    db.add(new_room)
+@router.post("/", response_model=schemas.Room)
+def create_room(
+    room: schemas.RoomCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    db_room = models.Room(name=room.name, owner_id=current_user.id)
+    db.add(db_room)
     db.commit()
-    db.refresh(new_room)
-    return new_room
+    db.refresh(db_room)
+
+    # adiciona automaticamente o criador à sala
+    user_room = models.UserRoom(user_id=current_user.id, room_id=db_room.id)
+    db.add(user_room)
+    db.commit()
+
+    return db_room
+
+
+@router.delete("/{room_id}")
+def delete_room(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    if room.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Apenas o dono pode excluir a sala")
+
+    db.delete(room)
+    db.commit()
+    return {"message": "Sala removida com sucesso"}
+
+
+@router.post("/{room_id}/join")
+def join_room(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+
+    already_in_room = db.query(models.UserRoom).filter_by(
+        user_id=current_user.id, room_id=room_id
+    ).first()
+    if already_in_room:
+        raise HTTPException(status_code=400, detail="Você já está na sala")
+
+    db.add(models.UserRoom(user_id=current_user.id, room_id=room_id))
+    db.commit()
+    return {"message": f"Usuário {current_user.username} entrou na sala {room.name}"}
+
+
+@router.delete("/{room_id}/leave")
+def leave_room(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    relation = db.query(models.UserRoom).filter_by(
+        user_id=current_user.id, room_id=room_id
+    ).first()
+    if not relation:
+        raise HTTPException(status_code=400, detail="Você não está nessa sala")
+
+    db.delete(relation)
+    db.commit()
+    return {"message": f"{current_user.username} saiu da sala"}
+
+
+@router.delete("/{room_id}/remove_user/{user_id}")
+def remove_user_from_room(
+    room_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    if room.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Apenas o dono pode remover usuários")
+
+    relation = db.query(models.UserRoom).filter_by(
+        user_id=user_id, room_id=room_id
+    ).first()
+    if not relation:
+        raise HTTPException(status_code=404, detail="Usuário não está na sala")
+
+    db.delete(relation)
+    db.commit()
+    return {"message": f"Usuário removido da sala {room.name}"}
 
 
 @router.get("/")

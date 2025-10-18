@@ -22,11 +22,13 @@ class Room(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Relações
     users = relationship("User", secondary="user_rooms",
                          back_populates="rooms")
     messages = relationship("Message", back_populates="room")
+    owner = relationship("User", backref="owned_rooms")
 
 
 class UserRoom(Base):
@@ -50,3 +52,18 @@ class Message(Base):
     user = relationship("User", back_populates="messages")
     # <- aqui conversa com Room.messages
     room = relationship("Room", back_populates="messages")
+
+
+class DirectMessage(Base):
+    __tablename__ = "direct_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    receiver_id = Column(Integer, ForeignKey("users.id"))
+    content = Column(Text, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    sender = relationship("User", foreign_keys=[
+                          sender_id], backref="sent_messages")
+    receiver = relationship("User", foreign_keys=[
+                            receiver_id], backref="received_messages")

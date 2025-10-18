@@ -53,6 +53,30 @@ def send_message(msg: schemas.MessageCreate, db: Session = Depends(get_db), curr
     return message
 
 
+@router.post("/direct/{receiver_id}")
+def send_direct_message(
+    receiver_id: int,
+    msg: schemas.MessageCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    receiver = db.query(models.User).filter(
+        models.User.id == receiver_id).first()
+    if not receiver:
+        raise HTTPException(
+            status_code=404, detail="Usuário de destino não encontrado")
+
+    direct_msg = models.DirectMessage(
+        sender_id=current_user.id,
+        receiver_id=receiver_id,
+        content=msg.content
+    )
+    db.add(direct_msg)
+    db.commit()
+    db.refresh(direct_msg)
+    return {"message": "Mensagem direta enviada com sucesso"}
+
+
 @router.get("/{room_id}")
 def get_messages(room_id: int, db: Session = Depends(get_db)):
     messages = db.query(models.Message).filter(
