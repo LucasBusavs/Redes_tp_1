@@ -36,7 +36,7 @@ class UserOut(BaseModel):
 
 class RoomBase(BaseModel):
     name: str
-
+    description: str
 
 class RoomCreate(RoomBase):
     pass
@@ -60,7 +60,7 @@ class MessageBase(BaseModel):
 
 
 class MessageCreate(MessageBase):
-    room_id: int
+    pass
 
 
 class Message(MessageBase):

@@ -2,45 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.db import get_db
-from app.routers.auth import create_access_token
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
-import os
+from app.auth_utils import get_current_user
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-SECRET_KEY = os.getenv("SECRET_KEY", "mysecretkey")
-ALGORITHM = "HS256"
-
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Token inválido ou expirado",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = db.query(models.User).filter(
-        models.User.username == username).first()
-    if user is None:
-        raise credentials_exception
-    return user
-
-
+# MARK: - Create
 @router.post("/", response_model=schemas.Room)
 def create_room(
     room: schemas.RoomCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    db_room = models.Room(name=room.name, owner_id=current_user.id)
+    db_room = models.Room(name=room.name, description=room.description, owner_id=current_user.id)
     db.add(db_room)
     db.commit()
     db.refresh(db_room)
@@ -52,7 +25,7 @@ def create_room(
 
     return db_room
 
-
+# MARK: - Delete
 @router.delete("/{room_id}")
 def delete_room(
     room_id: int,
@@ -71,7 +44,8 @@ def delete_room(
     return {"message": "Sala removida com sucesso"}
 
 
-@router.post("/{room_id}/join")
+# MARK: - Enter
+@router.post("/{room_id}/enter")
 def join_room(
     room_id: int,
     db: Session = Depends(get_db),
@@ -91,7 +65,7 @@ def join_room(
     db.commit()
     return {"message": f"Usuário {current_user.username} entrou na sala {room.name}"}
 
-
+# MARK: - Leave
 @router.delete("/{room_id}/leave")
 def leave_room(
     room_id: int,
@@ -103,13 +77,19 @@ def leave_room(
     ).first()
     if not relation:
         raise HTTPException(status_code=400, detail="Você não está nessa sala")
+    
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    if room.owner_id == current_user.id:
+        raise HTTPException(status_code=400, detail="O dono não pode sair da sala")
 
     db.delete(relation)
     db.commit()
     return {"message": f"{current_user.username} saiu da sala"}
 
-
-@router.delete("/{room_id}/remove_user/{user_id}")
+# MARK: - Remove user
+@router.delete("/{room_id}/users/{user_id}")
 def remove_user_from_room(
     room_id: int,
     user_id: int,
@@ -122,7 +102,11 @@ def remove_user_from_room(
     if room.owner_id != current_user.id:
         raise HTTPException(
             status_code=403, detail="Apenas o dono pode remover usuários")
-
+    
+    if room.owner_id == user_id:
+        raise HTTPException(
+            status_code=400, detail="O dono da sala não pode ser removido")
+    
     relation = db.query(models.UserRoom).filter_by(
         user_id=user_id, room_id=room_id
     ).first()
@@ -133,7 +117,62 @@ def remove_user_from_room(
     db.commit()
     return {"message": f"Usuário removido da sala {room.name}"}
 
+# MARK: - Send messages
 
+def _user_in_room(room: models.Room, user_id: int) -> bool:
+    # tenta usar relação room.users (mais comum). Ajuste se seu modelo for outro.
+    try:
+        users = getattr(room, "users", None)
+        if users is None:
+            return False
+        return any(u.id == user_id for u in users)
+    except Exception:
+        return False
+
+
+@router.post("/{room_id}/messages")
+def send_message(
+    room_id: int,
+    msg: schemas.MessageCreate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+    ):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+
+    if not _user_in_room(room, current_user.id):
+        raise HTTPException(
+            status_code=403, detail="Você não faz parte desta sala")
+
+    message = models.Message(
+        room_id=room.id,
+        user_id=current_user.id,
+        content=msg.content,
+        timestamp=datetime.utcnow()
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+# MARK: - Get messages
+
+@router.get("/{room_id}/messages")
+def get_messages(room_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    room = db.query(models.Room).filter(models.Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+
+    if not _user_in_room(room, current_user.id):
+        raise HTTPException(
+            status_code=403, detail="Você não tem acesso a esta sala")
+
+    messages = db.query(models.Message).filter(
+        models.Message.room_id == room_id).all()
+    return messages
+
+# MARK: - Get all rooms
 @router.get("/")
 def list_rooms(db: Session = Depends(get_db)):
     return db.query(models.Room).all()
