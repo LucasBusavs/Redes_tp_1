@@ -56,6 +56,7 @@ Arquivos relevantes: [docker-compose.yml](docker-compose.yml), [Dockerfile](Dock
    ```
 
 ## Endpoints principais / WebSockets
+- Swagger/OpenAPI disponível em: localhost:8000/docs
 - Rotas REST (ver implementações):
   - Usuários: [`app/routers/users.py`](app/routers/users.py)
     - POST /users — criar usuário
