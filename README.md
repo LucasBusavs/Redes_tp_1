@@ -1,5 +1,4 @@
-// ...existing code...
-# Redes_tp_1
+# Redes Trabalho Pratico 1 - Enzo Rodrigues e Lucas Bueno
 
 Projeto de exemplo de API de chat construída com FastAPI, SQLAlchemy, PostgreSQL e Redis (WebSockets).
 
